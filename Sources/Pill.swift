@@ -35,6 +35,17 @@ struct Pill: View {
     var newTab: () -> Void = {}
     /// New tab makes a private one: the private side of the tabs shows.
     var newPrivate = false
+    /// Over the tabs, Private | N Tabs: over to the other side.
+    var flipPrivate: () -> Void = {}
+    /// The tabs that aren't private, for the switch's "N Tabs".
+    var normalCount = 0
+    /// Done, the blue button over the tabs: back to the last page of the
+    /// side showing.
+    var done: () -> Void = {}
+    /// The knight's seal, tapped: the assistant that fills the page.
+    var assistant: () -> Void = {}
+    /// The seal, held: the extensions.
+    var extensions: () -> Void = {}
     /// The Duo's column beside the camera, where Back and Tabs stand.
     var rail = Rail()
     var bookmarks: () -> Void = {}
@@ -52,6 +63,20 @@ struct Pill: View {
     /// The site's name at the folded size, measured, so the capsule can
     /// close in around it.
     @State private var nameWidth: CGFloat = 80
+    /// The bar's width, to tell a hold on the seal from one on the pill.
+    @State private var barWidth: CGFloat = 400
+    /// The capsule's width, to tell a tap on Private from one on N Tabs.
+    @State private var pillWidth: CGFloat = 300
+    /// Over the tabs on an iPhone, the bar is Safari's switch, Private |
+    /// N Tabs, and New tab is the round button on its left; in a rail the
+    /// switch stands in the rail (Sheet) and the bar stays New tab.
+    private var switchInside: Bool { !rail.on }
+    @Namespace private var segmentSpace
+    /// The switch over the tabs: small, in the middle, between New tab and
+    /// Done, as in Safari.
+    private let switchWidth: CGFloat = 176
+    /// Safari's Done blue, as it draws over the dark tabs.
+    static let doneBlue = Color(red: 109 / 255, green: 165 / 255, blue: 248 / 255)
 
     var body: some View {
         GeometryReader { geo in
@@ -69,8 +94,13 @@ struct Pill: View {
             // Over the tabs, Tabs' room is the pill's: New tab reaches the
             // edge where the thumb that opened the tabs already is.
             let tabsLeading = rail.on && rail.leading
-            let l = tabsLeading ? l0 + (16 - l0) * morph : l0
-            let r = tabsLeading ? r0 : r0 + (16 - r0) * morph
+            // On an iPhone it closes in to the small switch in the middle,
+            // New tab on its left and Done on its right.
+            let centred = max(between, (geo.size.width - switchWidth) / 2)
+            let l = switchInside ? l0 + (centred - l0) * morph
+                : tabsLeading ? l0 + (16 - l0) * morph : l0
+            let r = switchInside ? r0 + (centred - r0) * morph
+                : tabsLeading ? r0 : r0 + (16 - r0) * morph
             ZStack(alignment: .bottom) {
                 address
                     .padding(.leading, l)
@@ -86,11 +116,17 @@ struct Pill: View {
         .frame(height: Metrics.pill)
         .padding(.bottom, 8 - 6 * f)
         .contentShape(Rectangle())
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
         .gesture(Pan(action: pan))
         // Folded, the bar is small: a tap anywhere about it opens it again,
         // not only one that lands on the capsule itself.
         .gesture(Tap { if tucked { chrome.unfold(animated: true) } })
-        .gesture(Hold { if !tucked, !over { Feel.nudge(); hold() } })
+        // Held on the seal, the extensions; anywhere else, the page's menu.
+        .gesture(HoldAt { at in
+            guard !tucked, !over else { return }
+            Feel.nudge()
+            if switchInside, at.x > barWidth - (16 + Metrics.pill + 12) { extensions() } else { hold() }
+        })
     }
 
     /// Back and Tabs: either side of the pill on an iPhone; one over the
@@ -115,13 +151,14 @@ struct Pill: View {
         }
     }
 
-    /// Back on a page, Bookmarks over the tabs: one button, its icon turning.
+    /// Back on a page, New tab over the tabs (as in Safari, by the switch):
+    /// one button, its icon turning. Bookmarks is in the tabs' ··· menu.
     private var back: some View {
-        side("chevron.left", morph > 0.5 ? "Bookmarks" : "Back",
+        side("chevron.left", morph > 0.5 ? "New tab" : "Back",
              strength: tab.canGoBack ? 1 : 0.35 + 0.65 * Double(morph),
-             other: "book", turn: morph) {
+             other: "plus", turn: morph) {
             if over {
-                bookmarks()
+                newTab()
             } else if tab.canGoBack {
                 Feel.tick()
                 tab.back()
@@ -129,20 +166,59 @@ struct Pill: View {
         }
     }
 
-    /// Tabs, melting into New tab as the pill reaches it. Still there to
-    /// the finger: tapped twice, it opens the tabs, then a new one.
-    private var tabsButton: some View {
-        side("square.on.square", "Tabs") {
-            if over { newTab() } else { tabs() }
+    /// On a page, the knight's seal: tapped, the assistant that fills the
+    /// page; held, the extensions (the bar's hold, by where it is). The tabs
+    /// are a swipe up on the bar. Over the tabs on an iPhone, Done: blue, a
+    /// tick, back to the last page of the side showing (Safari's). In a rail
+    /// it is Tabs, melting into New tab as the pill reaches it, as before.
+    @ViewBuilder private var tabsButton: some View {
+        if switchInside {
+            ZStack {
+                // The rider and the sword in ink, out to the glass's edge.
+                Image("SealMark")
+                    .resizable()
+                    .renderingMode(.template)
+                    .interpolation(.high)
+                    .frame(width: Metrics.pill, height: Metrics.pill)
+                    .clipShape(Circle())
+                    .foregroundStyle(.primary)
+                    .modifier(Handover(t: morph, leaving: true, shrink: 0.3))
+                Image(systemName: "checkmark")
+                    .font(.scaled(17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .modifier(Handover(t: morph, leaving: false, shrink: 0.3))
+            }
+            .frame(width: Metrics.pill, height: Metrics.pill)
+            // Done's blue comes in with the tabs, over the glass.
+            .background {
+                if morph > 0 { Circle().fill(Pill.doneBlue).opacity(Double(min(1, morph))) }
+            }
+            .glass(Circle(), interactive: true, else: .clear)
+            .background { if #unavailable(iOS 26.0) { Glass(shape: Circle()) } }
+            .padding(8)
+            .contentShape(Rectangle())
+            .gesture(Tap { if over { done() } else { assistant() } })
+            .padding(-8)
+            .accessibilityLabel(morph > 0.5 ? "Done" : "Assistant")
+            .accessibilityHint(morph > 0.5 ? "" : "Hold for extensions")
+            .accessibilityAddTraits(.isButton)
+        } else {
+            side("square.on.square", "Tabs") {
+                if over { newTab() } else { tabs() }
+            }
+            .opacity(Double(max(0, 1 - morph * 1.6)))
+            .scaleEffect(1 - 0.25 * morph)
+            .accessibilityValue(Text("\(count)"))
+            .accessibilityHidden(morph > 0.5)
         }
-        .opacity(Double(max(0, 1 - morph * 1.6)))
-        .scaleEffect(1 - 0.25 * morph)
-        .accessibilityValue(Text("\(count)"))
-        .accessibilityHidden(morph > 0.5)
     }
 
     private var address: some View {
         let height = Metrics.pill - (Metrics.pill - Metrics.pillFolded) * f
+        // A results page says what was searched, behind a magnifying glass,
+        // not the engine's logo and name (as Safari does).
+        let searched = heading == nil ? tab.searched : nil
+        let name = heading ?? searched ?? tab.short
         // Everything before the name gives its room back as the bar folds,
         // with the finger: no step where it would vanish all at once.
         return ZStack {
@@ -157,6 +233,11 @@ struct Pill: View {
                 Group {
                     if tab.loading {
                         Ring()
+                    } else if searched != nil {
+                        Image(systemName: "magnifyingglass")
+                            .font(.scaled(13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 15, height: 15)
                     } else {
                         Mark(icon: tab.icon, letter: tab.letter, size: 15)
                     }
@@ -170,19 +251,25 @@ struct Pill: View {
                     .foregroundStyle(.secondary)
                     .collapsing(f)
             }
-            Text(heading ?? tab.short)
+            Text(name)
                 .font(.scaled(15.5 - 3 * f))
                 .foregroundStyle(tab.isBlank && heading == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                 .lineLimit(1)
-                .truncationMode(.middle)
-                .id(heading ?? tab.short)
+                .truncationMode(searched != nil ? .tail : .middle)
+                .id(name)
                 .transition(.opacity)
         }
         .modifier(Handover(t: morph, leaving: true, shrink: 0.08))
-        Label(newPrivate ? "New private tab" : "New tab", systemImage: newPrivate ? "eyeglasses" : "plus")
-            .labelStyle(.titleAndIcon)
-            .font(.scaled(15, weight: .medium))
-            .foregroundStyle(.primary)
+        Group {
+            if switchInside {
+                sidesSwitch
+            } else {
+                Label(newPrivate ? "New private tab" : "New tab", systemImage: newPrivate ? "eyeglasses" : "plus")
+                    .labelStyle(.titleAndIcon)
+                    .font(.scaled(15, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
+        }
             .modifier(Handover(t: morph, leaving: false, shrink: 0.08))
             .accessibilityHidden(morph < 0.5)
         }
@@ -192,7 +279,7 @@ struct Pill: View {
         .background {
             // The name at its folded size, never shown: how narrow the
             // capsule may get.
-            Text(heading ?? tab.short)
+            Text(name)
                 .font(.scaled(12.5))
                 .lineLimit(1)
                 .fixedSize()
@@ -210,9 +297,20 @@ struct Pill: View {
         // gives it back: the words travel with the capsule, not after it.
         .matchedGeometryEffect(id: "pill", in: space, isSource: source)
         .contentShape(Capsule())
-        .gesture(Tap {
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pillWidth = $0 }
+        .gesture(TapAt { at in
             if over {
-                newTab()
+                if switchInside {
+                    // Left half Private, right half the tabs: the side
+                    // tapped, if it isn't the one showing already.
+                    let wantsPrivate = at.x < pillWidth / 2
+                    if wantsPrivate != newPrivate {
+                        Feel.tick()
+                        flipPrivate()
+                    }
+                } else {
+                    newTab()
+                }
             } else if tucked {
                 chrome.unfold(animated: true)
             } else {
@@ -222,10 +320,41 @@ struct Pill: View {
         .animation(Motion.quick, value: heading)
     }
 
+    /// Over the tabs, the bar is Safari's switch: Private on the left, the
+    /// other tabs, counted, on the right; the side showing sits on a lighter
+    /// capsule that slides across when the other is tapped.
+    private var sidesSwitch: some View {
+        HStack(spacing: 0) {
+            segment("Private", on: newPrivate)
+            segment(normalCount == 1 ? "1 Tab" : "\(normalCount) Tabs", on: !newPrivate)
+        }
+        // The lighter capsule sits close inside the bar's own edge.
+        .padding(.horizontal, -(14 - 5))
+    }
+
+    private func segment(_ name: LocalizedStringKey, on: Bool) -> some View {
+        Text(name)
+            .font(.scaled(16, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .frame(maxWidth: .infinity)
+            .frame(height: Metrics.pill - 10)
+            .background {
+                if on {
+                    Capsule()
+                        .fill(Palette.ink.opacity(0.15))
+                        .matchedGeometryEffect(id: "segment", in: segmentSpace)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+
     /// A round glass button either side of the pill: Back on the left, as in
     /// Safari, every tab on the right. White on the glass; dimmed when there
     /// is nowhere to go.
-    private func side(_ symbol: String, _ name: LocalizedStringKey, strength: Double = 1, other: String? = nil, turn: CGFloat = 0, action: @escaping () -> Void) -> some View {
+    private func side(_ symbol: String, _ name: LocalizedStringKey, strength: Double = 1, other: String? = nil, turn: CGFloat = 0, tint: CGFloat = 0, action: @escaping () -> Void) -> some View {
         // One button, its icon turning into the other one's.
         ZStack {
             Image(systemName: symbol)
@@ -235,10 +364,14 @@ struct Pill: View {
                     .modifier(Handover(t: turn, leaving: false, shrink: 0.3))
             }
         }
-            .font(.scaled(17, weight: .medium))
-            .foregroundStyle(.primary)
+            .font(.scaled(17, weight: tint > 0.5 ? .semibold : .medium))
+            .foregroundStyle(tint > 0.5 ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
             .opacity(strength)
             .frame(width: Metrics.pill, height: Metrics.pill)
+            // Done's blue comes in with the tabs, over the glass.
+            .background {
+                if tint > 0 { Circle().fill(Pill.doneBlue).opacity(Double(min(1, tint))) }
+            }
             .glass(Circle(), interactive: true, else: .clear)
             .background { if #unavailable(iOS 26.0) { Glass(shape: Circle()) } }
             // The whole corner answers, not only the circle: a thumb

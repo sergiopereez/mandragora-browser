@@ -14,9 +14,19 @@ enum Web {
         config.applicationNameForUserAgent = userAgentTail
         // A video's own full-screen button takes the whole screen.
         config.preferences.isElementFullscreenEnabled = true
+        baseScripts().forEach(config.userContentController.addUserScript)
+        // Chrome extensions (Extensions.swift); they never see a private tab.
+        if #available(iOS 18.4, *) { config.webExtensionController = Extensions.shared.controller }
+        return config
+    }
+
+    /// The scripts every page gets, whatever the ad blocker says. The
+    /// blocker takes every user script off and puts them back at each
+    /// navigation (Shield.tune), so these are put back with it from here.
+    @MainActor static func baseScripts() -> [WKUserScript] {
         // A web link held is ours to show (a live peek): iOS's own preview
         // and menu stay out of the way, links only.
-        config.userContentController.addUserScript(WKUserScript(
+        let callout = WKUserScript(
             source: """
             (function () {
               var s = document.createElement('style');
@@ -24,8 +34,10 @@ enum Web {
               (document.head || document.documentElement).appendChild(s);
             })();
             """,
-            injectionTime: .atDocumentEnd, forMainFrameOnly: false))
-        return config
+            injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        // The Chrome Web Store's button, made to install here (StoreRelay).
+        let store = WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .page)
+        return [callout, store] + Cookies.scripts()
     }
 
     /// One cookie jar for every private tab open now, kept in memory only and
@@ -147,6 +159,11 @@ final class Tab: NSObject, ObservableObject, Identifiable {
 
     var short: String {
         address.map { Address.host($0) } ?? String(localized: "Search or enter an address")
+    }
+
+    /// On a search engine's results page, the words searched for.
+    var searched: String? {
+        address.flatMap { Engine.words(in: $0, custom: Prefs.shared.customEngine) }
     }
 
     init(

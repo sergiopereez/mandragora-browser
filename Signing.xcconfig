@@ -1,0 +1,8 @@
+// Who signs the app. Yours go in Signing.local.xcconfig, which git leaves alone:
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   PRODUCT_BUNDLE_IDENTIFIER = com.you.mandragora
+//
+DEVELOPMENT_TEAM =
+PRODUCT_BUNDLE_IDENTIFIER = com.example.mandragora
+#include? "Signing.local.xcconfig"

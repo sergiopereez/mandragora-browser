@@ -90,7 +90,7 @@ struct Sheet: View {
         return rows == 0 ? 0 : 10 + rows * 50 + (rows - 1) * 6
     }
     /// The pins and the room for the bar, which stays where it is on a page
-    /// and becomes New tab here.
+    /// and becomes New tab here (with Tabs | Private inside it, Pill).
     private var footRoom: CGFloat { pinsTall + 10 + Metrics.pill + 8 }
 
     var body: some View {
@@ -334,13 +334,19 @@ struct Sheet: View {
                 }
 
             }
+            // The lines' own height (a plain stack: all of them, always).
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listTall = $0 }
             .padding(.leading, padL)
             .padding(.trailing, padR)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
-        .contentMargins(.top, topRoom + 4, for: .scrollContent)
+        // A few lines sit low, by the thumb, over the pins and New tab.
+        .contentMargins(.top, topRoom + 4 + slack, for: .scrollContent)
         .contentMargins(.bottom, footRoom + 8, for: .scrollContent)
+        // Every line fits, low by the thumb: nothing to scroll.
+        .scrollDisabled(slack > 0.5)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scrollerTall = $0 }
         .onScrollGeometryChange(for: CGFloat.self) { geo in
             geo.contentOffset.y + geo.contentInsets.top
         } action: { _, offset in
@@ -407,9 +413,13 @@ struct Sheet: View {
             }
             // Always free to scroll: whatever doesn't fit is a drag away.
             .scrollBounceBehavior(.basedOnSize)
-            // Under the buttons along the top, and down to the pins' floor.
-            .contentMargins(.top, topRoom + 4, for: .scrollContent)
+            // Under the buttons along the top, and down to the pins' floor;
+            // a few cards sit low, by the thumb, just over the pins and New
+            // tab, rather than under the buttons with the screen empty below.
+            .contentMargins(.top, topRoom + 4 + slack, for: .scrollContent)
             .contentMargins(.bottom, footRoom + 8, for: .scrollContent)
+            // Every card fits, low by the thumb: nothing to scroll.
+            .scrollDisabled(slack > 0.5)
             // Cards moving with the page run past the grid's edges.
             .scrollClipDisabled()
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, tall in
@@ -419,6 +429,7 @@ struct Sheet: View {
                 Room(content: geo.contentSize.height, container: geo.containerSize.height,
                      top: geo.contentInsets.top, bottom: geo.contentInsets.bottom)
             } action: { _, room in self.room = room }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scrollerTall = $0 }
             .scrollPosition($position)
             .scrollIndicators(.hidden)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 - padL - padR }
@@ -592,6 +603,28 @@ struct Sheet: View {
         var bottom: CGFloat = 0
     }
     @State private var room = Room()
+    /// The scroller's own height, inside the safe area (which it covers
+    /// with insets of its own): it doesn't move with the slack.
+    @State private var scrollerTall: CGFloat = 0
+    /// The lines' height in the list, measured (a plain stack).
+    @State private var listTall: CGFloat = 0
+
+    /// Room left over above the tabs when they all fit, so that a few sit
+    /// low, by the thumb, just over the pins and New tab (as in Safari).
+    /// Worked out, never measured back: from the scroller's frame, the room
+    /// the buttons and the pins keep, and the tabs' height,
+    /// counted for cards (a lazy grid set out of sight measures nothing) and
+    /// measured for the list. None of it moves with the slack, so it can't
+    /// chase itself; read from the scroll geometry, it did, and the screen
+    /// never settled.
+    private var slack: CGFloat {
+        guard scrollerTall > 0, !prefs.tabDeck else { return 0 }
+        // The safe area is outside this height and inside the insets alike:
+        // what shows is the height less the two margins.
+        let seen = scrollerTall - (topRoom + 4) - (footRoom + 8)
+        let tall = prefs.tabCards ? cardsHeight : listTall
+        return max(0, (seen - tall).rounded())
+    }
     @State private var position = ScrollPosition(edge: .top)
     @Namespace private var sideSpace
     /// The pin held and moved, where the finger is, and where on the pin
@@ -603,11 +636,16 @@ struct Sheet: View {
     @State private var pinMenu: Tab?
 
     /// The page's card in the middle of what shows, never past either end:
-    /// cards that all fit stay at the top, under the buttons, whichever is
+    /// cards that all fit stay put, low by the thumb (slack), whichever is
     /// the page's. Worked out, not left to scrollTo, which with a few cards
     /// put them half way down an empty screen.
     private func aim() {
         guard room.container > 0 else { return }
+        // Every card fits, set low by the slack: nothing to scroll to.
+        if slack > 0.5 {
+            position.scrollTo(edge: .top)
+            return
+        }
         let seen = room.container - room.top - room.bottom
         let most = max(0, room.content - seen)
         guard most > 0.5, let at = loose.firstIndex(where: { $0.id == browser.activeID }) else {
@@ -662,9 +700,9 @@ struct Sheet: View {
     /// buttons on the left, by the thumb's reach from the side. No Done:
     /// a card, a drag down or the page itself takes the screen away.
     private var header: some View {
+        // Tabs | Private is inside New tab (Pill), within the thumb's reach.
         HStack(spacing: 8) {
             closeAllButton
-            sides
             moreMenu
             Spacer(minLength: 0)
         }
@@ -717,6 +755,8 @@ struct Sheet: View {
                 }
             } label: { Label("Recently Closed", systemImage: "clock.arrow.circlepath") }
             Divider()
+            // New tab took Bookmarks' place by the switch: it's here now.
+            Button { browser.showingBookmarks = true } label: { Label("Bookmarks", systemImage: "book") }
             Button { browser.settings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {
             headerButton("ellipsis")

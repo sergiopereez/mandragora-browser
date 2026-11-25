@@ -174,6 +174,34 @@ struct Tap: UIGestureRecognizerRepresentable {
     }
 }
 
+/// A tap that says where it landed, in the view's own space.
+struct TapAt: UIGestureRecognizerRepresentable {
+    let action: (CGPoint) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UITapGestureRecognizer {
+        UITapGestureRecognizer()
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UITapGestureRecognizer, context: Context) {
+        if recognizer.state == .ended { action(context.converter.localLocation) }
+    }
+}
+
+/// A hold that says where it is, in the view's own space.
+struct HoldAt: UIGestureRecognizerRepresentable {
+    let action: (CGPoint) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let hold = UILongPressGestureRecognizer()
+        hold.minimumPressDuration = 0.35
+        return hold
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        if recognizer.state == .began { action(context.converter.localLocation) }
+    }
+}
+
 struct Hold: UIGestureRecognizerRepresentable {
     let action: () -> Void
 

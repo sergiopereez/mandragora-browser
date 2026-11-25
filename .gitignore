@@ -12,3 +12,6 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Who signs it: yours alone
+Signing.local.xcconfig

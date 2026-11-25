@@ -100,6 +100,11 @@ final class Prefs: ObservableObject {
         didSet { Shield.shared.enabled = shield }
     }
 
+    /// Cookie banners answered "Reject all" by themselves (Cookies).
+    @Published var rejectCookies: Bool {
+        didSet { Cookies.enabled = rejectCookies }
+    }
+
     /// Offer the page on screen to one's own Mac, and take up the Mac's.
     /// On unless turned off: it's Apple's own, between one's own devices.
     @Published var handoff: Bool {
@@ -162,12 +167,13 @@ final class Prefs: ObservableObject {
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? Engine.standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         shield = Shield.shared.enabled
+        rejectCookies = Cookies.enabled
         handoff = store.object(forKey: "handoff") as? Bool ?? true
         autoClose = store.string(forKey: "tabs.autoclose").flatMap(AutoClose.init) ?? .never
         lockPrivate = store.object(forKey: "private.lock") as? Bool ?? true
         engineSuggestions = store.object(forKey: "search.suggest") as? Bool ?? true
         welcomed = store.bool(forKey: "welcomed")
-        sync = store.object(forKey: "sync") as? Bool ?? true
+        sync = Sync.available && (store.object(forKey: "sync") as? Bool ?? true)
         syncSpace = store.string(forKey: "sync.space")
         tabCards = store.object(forKey: "tabs.cards") as? Bool ?? true
         tabDeck = store.bool(forKey: "tabs.deck")

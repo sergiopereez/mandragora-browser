@@ -55,8 +55,12 @@ struct Settings: View {
                         .onChange(of: prefs.shield) { _, _ in
                             Shield.shared.apply(to: browser.tabs.map { $0.web.configuration.userContentController })
                         }
+                    Toggle("Reject cookie banners", isOn: $prefs.rejectCookies).tint(.green)
+                        .onChange(of: prefs.rejectCookies) { _, _ in
+                            Shield.shared.apply(to: browser.tabs.map { $0.web.configuration.userContentController })
+                        }
                 } footer: {
-                    Text("Third-party ad networks and trackers are stopped before they load. If a site breaks, hold the address and allow ads on that site alone.")
+                    Text("Third-party ad networks and trackers are stopped before they load. If a site breaks, hold the address and allow ads on that site alone. A cookie banner is answered Reject all by itself, wherever the site offers it.")
                 }
 
                 Section {
@@ -145,6 +149,8 @@ struct Settings: View {
                 isPresented: $askingData, titleVisibility: .visible
             ) {
                 Button("Clear Cookies and Website Data", role: .destructive) {
+                    // What extensions' panels hold of them too.
+                    if #available(iOS 18.4, *) { PanelCookies.clear() }
                     WKWebsiteDataStore.default().removeData(
                         ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast
                     ) {

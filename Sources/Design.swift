@@ -1,19 +1,20 @@
 import SwiftUI
 
-// The same palette as the Mac. Two apps that share a look should share the
-// numbers that make it, not approximate each other. Each one is a white level
-// for light and for dark, as on the Mac (Design.swift there).
+// The Mac's palette, with a darker dark: each one is a white level for light
+// and for dark. The surfaces' dark levels are lower than the Mac's (ground
+// 0.11 → 0.08 draws about rgb 27 instead of 37, Safari's tab view), while
+// the text's (ink, muted, faint) stay, so it reads as before.
 enum Palette {
-    static let ground = tone(1, 0.11)
+    static let ground = tone(1, 0.08)
     static let ink = tone(0.09, 0.93)
     static let muted = tone(0.55, 0.58)
     static let faint = tone(0.83, 0.32)
-    static let hairline = tone(0.91, 0.20)
-    static let wash = tone(0.937, 0.175)
-    static let pinLive = tone(0.90, 0.21)
-    static let hover = tone(0.965, 0.15)
+    static let hairline = tone(0.91, 0.16)
+    static let wash = tone(0.937, 0.14)
+    static let pinLive = tone(0.90, 0.17)
+    static let hover = tone(0.965, 0.12)
     /// What shows between and behind pages.
-    static let backdrop = tone(0.86, 0.04)
+    static let backdrop = tone(0.86, 0.03)
 
     static func tone(_ light: CGFloat, _ dark: CGFloat) -> Color {
         Color(uiColor: UIColor { traits in

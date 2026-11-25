@@ -80,6 +80,11 @@ struct ContentView: View {
     /// The first launch's three screens.
     @State private var welcoming = !Prefs.shared.welcomed
 
+    /// With an extension's panel put away first: one sheet at a time.
+    private func aside(_ next: @escaping () -> Void) {
+        if #available(iOS 18.4, *) { ExtensionPanel.shared.hide(then: next) } else { next() }
+    }
+
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing
@@ -190,6 +195,11 @@ struct ContentView: View {
                         over: browser.showingTabs,
                         newTab: { Feel.tick(); browser.newTab(private: browser.privateView) },
                         newPrivate: browser.privateView,
+                        flipPrivate: { withAnimation(Motion.settle) { browser.privateView.toggle() } },
+                        normalCount: browser.tabs.filter { !$0.isPrivate }.count,
+                        done: { Feel.tick(); withAnimation(Motion.glide) { browser.done() } },
+                        assistant: { Feel.tick(); aside { browser.showingAssistant = true } },
+                        extensions: { aside { browser.showingExtensions = true } },
                         rail: browser.rail,
                         // Back stands up the rail, under the clock, where a
                         // thumb reaches it as in Safari.
@@ -241,6 +251,15 @@ struct ContentView: View {
                     .opacity(browser.editing ? 1 : 0)
                     .allowsHitTesting(browser.editing)
                     .accessibilityHidden(!browser.editing)
+
+                // The way back to an extension's panel put away.
+                if #available(iOS 18.4, *) {
+                    PanelButton()
+                        .padding(.leading, 18)
+                        .padding(.bottom, Metrics.pill + 22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .opacity(browser.editing || browser.showingTabs || browser.holding || browser.finding ? 0 : 1)
+                }
 
                 // A download under way, or just arrived: a round button
                 // over Tabs, by the thumb, there only while it matters.
@@ -337,6 +356,18 @@ struct ContentView: View {
         .sheet(isPresented: $browser.settings) {
             Settings(browser: browser)
                 .presentationDetents([.large])
+        }
+        .sheet(isPresented: $browser.showingAssistant) {
+            AssistantSheet(browser: browser)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $browser.showingExtensions) {
+            if #available(iOS 18.4, *) {
+                ExtensionsSheet(browser: browser)
+                    .presentationDetents([.medium, .large])
+            } else {
+                Text("Extensions need iOS 18.4 or later.").padding()
+            }
         }
         .fullScreenCover(isPresented: $welcoming) {
             Welcome {

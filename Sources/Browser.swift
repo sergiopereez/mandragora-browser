@@ -35,6 +35,9 @@ final class Browser: NSObject, ObservableObject {
     /// The system's find bar is up; the pill steps aside for it.
     @Published var finding = false
     @Published var settings = false
+    /// The knight's seal: the assistant (tapped) and the extensions (held).
+    @Published var showingAssistant = false
+    @Published var showingExtensions = false
     /// The bookmarks, and the other devices' tabs.
     @Published var showingBookmarks = false
     @Published var showingOthers = false
@@ -86,6 +89,7 @@ final class Browser: NSObject, ObservableObject {
         defer {
             offering = Offering(self, prefs: .shared)
             Sync.shared.browser = self
+            if #available(iOS 18.4, *) { Extensions.shared.browser = self }
             if Prefs.shared.sync { Sync.shared.start() }
         }
         Shield.shared.compile()
@@ -175,6 +179,27 @@ final class Browser: NSObject, ObservableObject {
         showingTabs = false
     }
 
+    /// A page of any kind, an extension's own included, in a tab of its own.
+    func openPage(_ url: URL) {
+        if let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+            open(url)
+            return
+        }
+        var configuration: WKWebViewConfiguration?
+        if #available(iOS 18.4, *) { configuration = Extensions.shared.configuration(for: url) }
+        guard let configuration else { return }
+        active?.capture()
+        let tab = Tab(configuration: configuration)
+        adopt(tab)
+        activeID = tab.id
+        tab.web.load(URLRequest(url: url))
+        editing = false
+        showingTabs = false
+        holding = false
+        chrome.unfold(animated: false)
+        remember()
+    }
+
     /// A link from another app.
     func open(_ url: URL) {
         guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return }
@@ -192,6 +217,18 @@ final class Browser: NSObject, ObservableObject {
         holding = false
         chrome.unfold(animated: false)
         remember()
+    }
+
+    /// Done, over the tabs: back to the page last looked at on the side
+    /// showing, private or not; a new one there when that side has none.
+    func done() {
+        if let active, active.isPrivate == privateView {
+            select(active)
+        } else if let last = tabs.filter({ $0.isPrivate == privateView }).max(by: { $0.seen < $1.seen }) {
+            select(last)
+        } else {
+            newTab(private: privateView)
+        }
     }
 
     func select(_ tab: Tab) {
@@ -386,6 +423,8 @@ final class Browser: NSObject, ObservableObject {
         let controller = tab.web.configuration.userContentController
         controller.removeScriptMessageHandler(forName: Zap.handler)
         controller.add(ZapRelay(self), name: Zap.handler)
+        controller.removeScriptMessageHandler(forName: StoreRelay.name)
+        controller.add(StoreRelay(self), name: StoreRelay.name)
         cover(tab)
         tab.scrolled = { [weak self, weak tab] event in
             guard let self, let tab, tab.id == self.activeID else { return }
@@ -565,7 +604,8 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func edit() {
-        typed = active?.address.map { Address.pretty($0) } ?? ""
+        // On a results page, the words, to change the search, as in Safari.
+        typed = active?.searched ?? active?.address.map { Address.pretty($0) } ?? ""
         holding = false
         editing = true
     }
@@ -759,6 +799,23 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel, preferences)
             return
         }
+        if #available(iOS 18.4, *), action.targetFrame?.isMainFrame != false, ExtensionAuth.intercept(url, browser: self, from: webView) {
+            decisionHandler(.cancel, preferences)
+            return
+        }
+        // An extension's own page, in the tab made for it; a link out of one
+        // opens in a tab of its own, since that view can't go anywhere else.
+        if #available(iOS 18.4, *) {
+            if scheme == Extensions.scheme {
+                decisionHandler(.allow, preferences)
+                return
+            }
+            if action.targetFrame?.isMainFrame == true, webView.url?.scheme == Extensions.scheme, ["http", "https"].contains(scheme) {
+                decisionHandler(.cancel, preferences)
+                openPage(url)
+                return
+            }
+        }
         if !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
             decisionHandler(.cancel, preferences)
             if action.navigationType == .linkActivated || action.targetFrame?.isMainFrame != false {
@@ -767,6 +824,19 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         if action.targetFrame?.isMainFrame == true {
+            // The Chrome Web Store shuts its front and its search to phones:
+            // it is asked for as a computer would, there and nowhere else.
+            // What a page is asked as is settled before this point, so the
+            // page is asked for again.
+            let store = url.host()?.lowercased() == StoreRelay.host
+            if store != (webView.customUserAgent == StoreRelay.agent) {
+                webView.customUserAgent = store ? StoreRelay.agent : nil
+                if action.navigationType != .backForward, (action.request.httpMethod ?? "GET") == "GET" {
+                    decisionHandler(.cancel, preferences)
+                    webView.load(URLRequest(url: url))
+                    return
+                }
+            }
             Shield.shared.tune(webView.configuration.userContentController, for: url.host()?.lowercased())
             // The computer's version of the site, when it was asked for.
             preferences.preferredContentMode = Sites.shared.prefs(url).desktop == true ? .desktop : .mobile
@@ -779,6 +849,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard let tab = tabs.first(where: { $0.web === webView }) else { return }
         apply(Sites.shared.prefs(tab.address), to: tab)
         tab.readGround()
+        // A site an extension lists may speak to it, by Chrome's name.
+        if #available(iOS 18.4, *), !tab.isPrivate, let script = ExtensionExternal.script {
+            webView.evaluateJavaScript(script, in: nil, in: .page) { _ in }
+        }
     }
 
     /// The camera and the microphone: as decided for the site, or asked.

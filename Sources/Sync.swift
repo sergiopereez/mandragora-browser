@@ -70,6 +70,9 @@ final class Sync: NSObject, ObservableObject {
     static let shared = Sync()
 
     static let containerID = "iCloud.com.officecommun.search"
+    /// Personal build, signed without Office Commun's iCloud container:
+    /// CloudKit would crash without its entitlement, so sync stays off.
+    nonisolated static let available = false
     static let zoneID = CKRecordZone.ID(zoneName: "Search", ownerName: CKCurrentUserDefaultName)
     /// The Mac's first space, whose pins are the ones there were before spaces.
     static let firstSpace = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
@@ -120,6 +123,10 @@ final class Sync: NSObject, ObservableObject {
     // MARK: on and off
 
     func start() {
+        guard Sync.available else {
+            problem = "Sync with iCloud isn't available in this build."
+            return
+        }
         guard engine == nil else { return }
         let database = CKContainer(identifier: Sync.containerID).privateCloudDatabase
         var config = CKSyncEngine.Configuration(database: database, stateSerialization: meta.state, delegate: self)
@@ -152,6 +159,7 @@ final class Sync: NSObject, ObservableObject {
 
     /// Everything Search keeps in iCloud, gone, for every device.
     func erase() {
+        guard Sync.available else { return }
         let engine = self.engine ?? CKSyncEngine(CKSyncEngine.Configuration(
             database: CKContainer(identifier: Sync.containerID).privateCloudDatabase,
             stateSerialization: meta.state, delegate: self

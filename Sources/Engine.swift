@@ -79,6 +79,36 @@ enum Engine: String, CaseIterable, Identifiable {
         host(of: template) != nil
     }
 
+    /// The words searched for, when an address is a results page of any of
+    /// the engines (or one's own): what the bar shows in place of the
+    /// engine's logo and name, as Safari does. Nil for any other page.
+    static func words(in url: URL, custom: String) -> String? {
+        guard let page = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let host = page.host?.lowercased()
+        else { return nil }
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let path = page.path.isEmpty ? "/" : page.path
+        for engine in Engine.allCases {
+            let template = engine.template(custom: custom)
+            guard let form = URLComponents(string: template.replacingOccurrences(of: "%s", with: mark)),
+                  let formHost = form.host?.lowercased(),
+                  let name = form.queryItems?.first(where: { $0.value == mark })?.name
+            else { continue }
+            let formBare = formHost.hasPrefix("www.") ? String(formHost.dropFirst(4)) : formHost
+            // Google answers from its country sites too: google.es, google.co.uk.
+            let same = bare == formBare || (engine == .google && bare.hasPrefix("google."))
+            guard same, path == (form.path.isEmpty ? "/" : form.path) else { continue }
+            // "+" is a space in a query; a typed plus arrives as %2B.
+            guard let raw = page.percentEncodedQueryItems?.first(where: { $0.name == name })?.value,
+                  let words = raw.replacingOccurrences(of: "+", with: "%20").removingPercentEncoding?
+                      .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !words.isEmpty
+            else { continue }
+            return words
+        }
+        return nil
+    }
+
     /// A template's host, with any leading "www." dropped — what a person
     /// would call the site if you asked them.
     static func bareHost(of template: String) -> String? {

@@ -9,19 +9,20 @@ struct Welcome: View {
 
     private struct Step: Identifiable {
         let id: Int
-        let symbol: String
+        /// Drawn for it, in ink (Icon/art.swift).
+        let picture: String
         let title: LocalizedStringKey
         let words: LocalizedStringKey
     }
 
     private let steps = [
-        Step(id: 0, symbol: "capsule", title: "One pill",
+        Step(id: 0, picture: "WelcomeLens", title: "One pill",
              words: "Tap it to search or type an address. Hold it for the page's menu: back, share, find, text size, pin."),
-        Step(id: 1, symbol: "arrow.left.and.right", title: "Slide it",
+        Step(id: 1, picture: "WelcomeGauntlet", title: "Slide it",
              words: "Sideways to go from tab to tab, past the last for a new one. Up to see every tab."),
-        Step(id: 2, symbol: "hand.draw", title: "Your tabs",
+        Step(id: 2, picture: "WelcomeBook", title: "Your tabs",
              words: "Swipe a tab left to close it. Hold it to pin it, bookmark it, or move it."),
-        Step(id: 3, symbol: "macbook.and.iphone", title: "With your Mac",
+        Step(id: 3, picture: "WelcomeChain", title: "With your Mac",
              words: "Your open tabs, pins and bookmarks follow you between Search on your iPhone and on your Mac, through your own iCloud. Turn on Sync with iCloud on the Mac too."),
     ]
 
@@ -31,11 +32,14 @@ struct Welcome: View {
                 ForEach(steps) { step in
                     VStack(spacing: 22) {
                         Spacer()
-                        Image(systemName: step.symbol)
-                            .font(.scaled(44, weight: .light))
+                        Image(step.picture)
+                            .resizable()
+                            .renderingMode(.template)
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 150, height: 150)
                             .foregroundStyle(Palette.ink)
-                            .frame(width: 120, height: 120)
-                            .glass(Circle(), else: Palette.wash)
+                            .accessibilityHidden(true)
                         Text(step.title)
                             .font(.scaled(26, weight: .semibold))
                             .foregroundStyle(Palette.ink)
